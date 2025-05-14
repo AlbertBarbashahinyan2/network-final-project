@@ -58,7 +58,7 @@ python clientUi.py
 ```
 
 **Follow the commands**
-  Follow the commands that will appear in the command line.
+  that will appear in the command line.
   Overall the functionality is similar to the UI client.
   Try also connecting the command line client to the UI client.
 
