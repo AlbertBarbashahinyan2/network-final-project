@@ -52,12 +52,7 @@ def get_contact_ip(nickname):
     return contacts.get(nickname)
 
 def create_xmpp_message(to_ip, from_ip, message_body):
-    """
-    creates an XML message.
-    Example: <message to="RECEIVER_IP" from="SENDER_IP" type="chat" xmlns="jabber:client">
-               <body>MESSAGE_TEXT</body>
-             </message>
-    """
+
     if not all([to_ip, from_ip, message_body]):
         print("Error: Cannot create message with empty fields.")
         return None
@@ -74,30 +69,36 @@ def create_xmpp_message(to_ip, from_ip, message_body):
     return ET.tostring(msg_element, encoding="unicode")
 
 def parse_xmpp_message(xml_string):
-
     try:
         root = ET.fromstring(xml_string)
-        if root.tag == "message":
+       
+        namespace_uri = "jabber:client"
+        expected_message_tag = f"{{{namespace_uri}}}message"
+        expected_body_tag = f"{{{namespace_uri}}}body"
+
+        if root.tag == expected_message_tag:
             from_ip = root.get("from")
-            body_element = root.find("body")
+           
+            body_element = root.find(expected_body_tag)
+           
             if body_element is not None:
                 message_text = body_element.text
                 return from_ip, message_text
             else:
-                print("Warning: Received message with no body.")
+                print(f"Warning: Message (tag: {root.tag}) received with no body element (expected tag: {expected_body_tag}).")
                 return from_ip, ""
         else:
-            print("Warning: Received non-message XML.")
-            return None, None
+            print(f"Warning: Received XML with unexpected root tag: '{root.tag}'. Expected '{expected_message_tag}'.")
+            return None, None 
+           
     except ET.ParseError as e:
-        print(f"Error parsing XML: {e}")
+        print(f"Error parsing XML: {e}. Raw string (first 200 chars): '{xml_string[:200]}...'")
         return None, None
     except Exception as e:
         print(f"An unexpected error occurred during XML parsing: {e}")
         return None, None
 
 def get_my_ip():
-    """Tries to determine the local machine's IP address for LAN communication."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
@@ -112,7 +113,6 @@ def get_my_ip():
     return ip
 
 def listen_for_messages(host, port):
-    """Listens for incoming messages on the given host and port."""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -130,12 +130,12 @@ def listen_for_messages(host, port):
                     if not chunk:
                         break
                     message_chunks.append(chunk)
-
                     if b"</message>" in chunk:
                         break
-
+               
                 if not message_chunks:
                     print(f"[-] No data received from {client_address[0]}. Connection closed.")
+                    client_socket.close()
                     continue
 
                 full_message_bytes = b"".join(message_chunks)
@@ -144,7 +144,7 @@ def listen_for_messages(host, port):
                 print(f"[<] Received raw: {full_message_str}")
                 from_ip, message_text = parse_xmpp_message(full_message_str)
 
-                if from_ip and message_text is not None:
+                if from_ip is not None and message_text is not None:
                     sender_nickname = "[Unknown IP]"
                     for nick, ip_addr in contacts.items():
                         if ip_addr == from_ip:
@@ -152,8 +152,8 @@ def listen_for_messages(host, port):
                             break
                     print(f"\n>>> Message from {sender_nickname} ({from_ip}): {message_text}")
                 else:
-                    print(f"[!] Could not parse message from {client_address[0]}. Raw data: {full_message_str}")
-
+                    print(f"[!] Failed to properly parse message from {client_address[0]}. See logs above. Raw data: {full_message_str}")
+               
                 print_prompt()
 
             except ConnectionResetError:
@@ -173,7 +173,6 @@ def listen_for_messages(host, port):
 
 
 def send_message(recipient_nickname_or_ip, message_text, sender_ip, target_port):
-    """Sends a message to the specified recipient."""
     recipient_ip = get_contact_ip(recipient_nickname_or_ip)
     if not recipient_ip:
         try:
@@ -208,7 +207,7 @@ def send_message(recipient_nickname_or_ip, message_text, sender_ip, target_port)
     except Exception as e:
         print(f"[!] Error sending message to {recipient_ip}: {e}")
     finally:
-        if 'client_socket' in locals():
+        if 'client_socket' in locals() and client_socket.fileno() != -1:
             client_socket.close()
 
 def print_prompt():
